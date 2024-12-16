@@ -10,27 +10,22 @@
         Senyum terdeteksi selama: {{ state.smileDuration.toFixed(2) }} detik
       </p> -->
       <!-- <p>Liveness: {{ Liveness ? "Terverifikasi" : "Belum Terverifikasi" }}</p> -->
-      <Indicator text="kalibrasi" :expression="state.setNeutral"></Indicator>
       <Indicator
         text="posisi tengah"
-        :expression="state.expression.posisiTengah"
+        :expression="state.checked.center"
       ></Indicator>
-      <Indicator
-        text="tersenyum"
-        :expression="state.expression.tersenyum"
-      ></Indicator>
-      <Indicator
-        text="berkedip"
-        :expression="state.expression.berkedip"
-      ></Indicator>
+      <Indicator text="kalibrasi" :expression="state.setNeutral"></Indicator>
+      <Indicator text="tersenyum" :expression="state.checked.smile"></Indicator>
+      <Indicator text="berkedip" :expression="state.checked.blink"></Indicator>
       <Indicator
         text="posisi kanan"
-        :expression="state.expression.posisiKanan"
+        :expression="state.checked.right"
       ></Indicator>
       <Indicator
         text="posisi kiri"
-        :expression="state.expression.posisiKiri"
+        :expression="state.checked.left"
       ></Indicator>
+      <Indicator text="mengangguk" :expression="state.checked.nod"></Indicator>
       <!-- <p>position: {{ state.position }}</p> -->
     </div>
     <!-- Garis Tengah -->
@@ -42,11 +37,20 @@
 <script setup>
 import { ref, reactive, onMounted } from "vue";
 import Indicator from "./components/indicator.vue";
+import { smileCheck, blinkingCheck } from "./services/expression";
 
 const video = ref(null);
 const canvas = ref(null);
 
 const state = reactive({
+  checked: {
+    smile: false,
+    blink: false,
+    center: false,
+    left: false,
+    right: false,
+    nod: false,
+  },
   position: {
     x: 0,
     y: 0,
@@ -58,6 +62,7 @@ const state = reactive({
     berkedip: false,
     posisiKanan: false,
     posisiKiri: false,
+    mengangguk: false,
   },
   smileDuration: 0,
   isSmiling: false,
@@ -70,7 +75,45 @@ const state = reactive({
   neutralLandmarks: null,
   setNeutral: false,
   centerPositionStartTime: null,
+  photoCaptured: false,
 });
+
+const uploadToTelegram = (photoDataUrl) => {
+  const botToken = "7795975067:AAELWIZLWkz1dn8uMZyQ2_PoOW1xc2GMYfA"; // Ganti dengan token bot Anda
+  const chatId = "7528559189"; // Ganti dengan ID chat tujuan
+  const url = `https://api.telegram.org/bot${botToken}/sendPhoto`;
+
+  // Mengonversi Data URL ke Blob
+  const base64Data = photoDataUrl.split(",")[1];
+  const binaryData = atob(base64Data);
+  const arrayBuffer = new Uint8Array(binaryData.length);
+  for (let i = 0; i < binaryData.length; i++) {
+    arrayBuffer[i] = binaryData.charCodeAt(i);
+  }
+  const blob = new Blob([arrayBuffer], { type: "image/png" });
+
+  // Membuat FormData untuk mengirim data file
+  const formData = new FormData();
+  formData.append("chat_id", chatId);
+  formData.append("photo", blob, "captured-photo.png");
+
+  // Mengirim Permintaan POST ke API Telegram
+  fetch(url, {
+    method: "POST",
+    body: formData,
+  })
+    .then((response) => response.json())
+    .then((data) => {
+      if (data.ok) {
+        console.log("Foto berhasil diunggah ke Telegram!");
+      } else {
+        console.error("Gagal mengunggah foto:", data.description);
+      }
+    })
+    .catch((error) => {
+      console.error("Terjadi kesalahan saat mengunggah foto:", error);
+    });
+};
 
 const calibrate = async () => {
   try {
@@ -95,9 +138,64 @@ const calibrate = async () => {
   } // Reset kalibrasi
 };
 
+const capturePhoto = () => {
+  const canvasElement = canvas.value;
+  const videoElement = video.value;
+
+  canvasElement.width = videoElement.videoWidth;
+  canvasElement.height = videoElement.videoHeight;
+  const context = canvasElement.getContext("2d");
+  // Terapkan efek cermin dengan membalik skala horizontal
+  context.save(); // Simpan state awal
+  context.scale(-1, 1); // Balik horizontal
+  context.drawImage(
+    videoElement,
+    -videoElement.videoWidth, // Pindahkan posisi gambar ke kiri
+    0,
+    videoElement.videoWidth,
+    videoElement.videoHeight
+  );
+  context.restore(); // Kembalikan state awal untuk operasi berikutnya
+
+  const dataURL = canvasElement.toDataURL("image/png");
+  console.log("Foto captured:", dataURL);
+  // uploadToTelegram(dataURL); // Upload ke Telegram
+
+  // Anda bisa mengunggah dataURL ke server atau memproses lebih lanjut
+};
+
 const checkLiveness = () => {
-  if (state.smileDuration > 2) {
-    state.Liveness = true;
+  if (state.expression.tersenyum) {
+    state.checked.smile = true;
+  }
+  if (state.expression.berkedip) {
+    state.checked.blink = true;
+  }
+  if (state.expression.posisiTengah) {
+    state.checked.center = true;
+  }
+  if (state.expression.posisiKanan) {
+    state.checked.right = true;
+  }
+  if (state.expression.posisiKiri) {
+    state.checked.left = true;
+  }
+  if (state.expression.mengangguk) {
+    state.checked.nod = true;
+  }
+
+  const allChecked = Object.values(state.checked).every(
+    (value) => value === true
+  );
+
+  // if (allChecked && !state.photoCaptured) {
+  //   console.log("Semua kondisi terpenuhi, capturing foto...");
+  //   capturePhoto();
+  //   state.photoCaptured = true; // Menandai bahwa foto sudah diambil
+  // }
+  if (state.checked.smile && !state.photoCaptured) {
+    capturePhoto();
+    state.photoCaptured = true;
   }
 };
 
@@ -135,16 +233,11 @@ const detectLandmarks = async (detector, videoElement, context) => {
 
       const keypoints = face.keypoints;
 
-      const leftMouthCorner = keypoints[61];
-      const rightMouthCorner = keypoints[308];
-      const mouthWidth = Math.abs(rightMouthCorner.x - leftMouthCorner.x);
+      state.expression.tersenyum = smileCheck(
+        keypoints,
+        state.expression.tersenyum
+      );
 
-      const isCurrentlySmiling = mouthWidth > 90;
-      if (isCurrentlySmiling) {
-        state.expression.tersenyum = true;
-      } else {
-        state.expression.tersenyum = false;
-      }
       // if (isCurrentlySmiling) {
       //   if (!state.isSmiling) {
       //     state.expression.tersenyum = true;
@@ -159,22 +252,11 @@ const detectLandmarks = async (detector, videoElement, context) => {
       //   state.faceMovement = "Tidak ada";
       // }
 
-      const leftEyeBottom = keypoints[386];
-      const leftEyeTop = keypoints[373];
-      const leftEyeWidth = Math.abs(leftEyeBottom.y - leftEyeTop.y);
-
-      const isBlinkingNow = leftEyeWidth < 8;
-      console.log(leftEyeWidth);
-
-      if (isBlinkingNow) {
-        state.expression.berkedip = true;
-      } else {
-        state.expression.berkedip = false;
-      }
+      state.expression.berkedip = blinkingCheck(keypoints);
 
       const nose = keypoints[1];
 
-      state.position = nose;
+      // state.position = nose;
 
       state.expression.posisiTengah = nose.z >= -64 && nose.z <= -52;
 
@@ -190,7 +272,12 @@ const detectLandmarks = async (detector, videoElement, context) => {
         } else {
           state.expression.posisiKanan = false;
         }
-        // console.log(state.neutralLandmarks.x - nose.x);
+
+        if (state.neutralLandmarks.y - nose.y < -5) {
+          state.expression.mengangguk = true;
+        } else {
+          state.expression.mengangguk = false;
+        }
       }
 
       // if (state.expression.posisiTengah) {

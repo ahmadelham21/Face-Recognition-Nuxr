@@ -1,5 +1,7 @@
 import * as faceLandmarksDetection from "@tensorflow-models/face-landmarks-detection";
 
+import { FaceMesh } from "@mediapipe/face_mesh";
+
 export default defineNuxtPlugin(async () => {
   const model = faceLandmarksDetection.SupportedModels.MediaPipeFaceMesh;
   const detectorConfig = {
