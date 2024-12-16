@@ -1,22 +1,28 @@
-import * as faceLandmarksDetection from "@tensorflow-models/face-landmarks-detection";
-
-import { FaceMesh } from "@mediapipe/face_mesh";
-
 export default defineNuxtPlugin(async () => {
-  const model = faceLandmarksDetection.SupportedModels.MediaPipeFaceMesh;
-  const detectorConfig = {
-    runtime: "mediapipe", // Pilih 'mediapipe' atau 'tfjs'
-    solutionPath: "https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh", // Path solusi
-  };
+  if (process.client) {
+    const faceLandmarksDetection = await import('@tensorflow-models/face-landmarks-detection');
+    const tf = await import('@tensorflow/tfjs-core');
+    await import('@tensorflow/tfjs-backend-webgl');
 
-  const detector = await faceLandmarksDetection.createDetector(
-    model,
-    detectorConfig
-  );
+    try {
+      await tf.setBackend('webgl');
+      await tf.ready();
 
-  return {
-    provide: {
-      detector: detector,
-    },
-  };
+      const model = faceLandmarksDetection.SupportedModels.MediaPipeFaceMesh;
+      const detectorConfig = {
+        runtime: "mediapipe",
+        solutionPath: "https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh"
+      };
+
+      const detector = await faceLandmarksDetection.createDetector(model, detectorConfig);
+
+      return {
+        provide: {
+          detector: detector,
+        },
+      };
+    } catch (error) {
+      console.error('Face detection model loading error:', error);
+    }
+  }
 });
