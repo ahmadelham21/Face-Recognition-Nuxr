@@ -2,7 +2,7 @@
 export default defineNuxtConfig({
   compatibilityDate: '2024-11-01',
   devtools: { enabled: true },
-  plugins: [{ src: "~/plugins/faceLandmark.js", mode: "client" }],
+  plugins: [{ src: "~/plugins/face-landmark.js", mode: "client" }],
  
 
 })
